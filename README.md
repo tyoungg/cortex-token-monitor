@@ -4,4 +4,4 @@ A Streamlit dashboard for monitoring Snowflake Cortex AI token usage.
 
 ## Privacy
 
-The **Per user** and **Leaderboard** views mask usernames that look like email addresses. Each distinct email-style username is shown as a numbered label (for example, `Email user 1`) instead of the original address. Non-email usernames and the `(unattributed)` label are shown as provided by Snowflake. The masking is for display in the app; the Snowflake query still reads the original `user_name` values.
+The **Per user** and **Leaderboard** views partially mask usernames that look like email addresses. The first two and last two characters of the address's local part are shown, with the middle replaced by asterisks (for example, `johndoe@example.com` appears as `jo***oe@example.com`). The domain remains visible. Non-email usernames and the `(unattributed)` label are shown as provided by Snowflake. Masking applies to display only; the app still uses the original usernames internally to keep users' usage separate.

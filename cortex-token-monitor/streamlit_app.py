@@ -1,5 +1,4 @@
 """Cortex AI token monitor: speedometer (tokens/hour) and odometer (running total)."""
-import hashlib
 import math
 import os
 import re
@@ -39,16 +38,17 @@ def load_hourly() -> pd.DataFrame:
     return df
 
 
-def mask_email_usernames(df: pd.DataFrame) -> pd.DataFrame:
-    """Replace email-style usernames with stable, non-identifying display labels."""
-    masked = df.copy()
-    email_users = sorted(
-        name for name in masked["user_name"].dropna().unique()
-        if re.fullmatch(r"[^\s@]+@[^\s@]+", str(name))
-    )
-    labels = {name: f"Email user {i}" for i, name in enumerate(email_users, start=1)}
-    masked["user_name"] = masked["user_name"].replace(labels)
-    return masked
+def mask_email_username(name: str) -> str:
+    """Mask the middle of an email's local part while preserving its domain."""
+    if not isinstance(name, str) or not re.fullmatch(r"[^\s@]+@[^\s@]+", name):
+        return name
+
+    local, domain = name.rsplit("@", 1)
+    if len(local) > 4:
+        masked_local = f"{local[:2]}{'*' * max(3, len(local) - 4)}{local[-2:]}"
+    else:
+        masked_local = f"{local[0]}***"
+    return f"{masked_local}@{domain}"
 
 
 def clear_cache() -> None:
@@ -136,12 +136,13 @@ with st.sidebar:
     st.button("Refresh data", icon=":material/refresh:", on_click=clear_cache)
 
 with st.spinner("Loading Cortex usage..."):
-    data = mask_email_usernames(load_hourly())
+    data = load_hourly()
 
 if data.empty:
     st.info("No Cortex AI usage found yet.")
     st.stop()
 
+data["user_display"] = data["user_name"].map(mask_email_username)
 services = sorted(data["service"].unique())
 with st.sidebar:
     sel_services = st.multiselect("Services", services, default=services)
@@ -183,12 +184,12 @@ with tab_all:
 # ---------- Per user ----------
 with tab_user:
     users = sorted(data["user_name"].unique())
-    who = st.selectbox("User", ["All users"] + users)
+    who = st.selectbox("User", ["All users"] + users, format_func=lambda name: "All users" if name == "All users" else mask_email_username(name))
     u_all = data if who == "All users" else data[data["user_name"] == who]
     u_per = in_period if who == "All users" else in_period[in_period["user_name"] == who]
     left, right = st.columns([1, 2])
     with left:
-        render_pair(u_all, anchor, window_h, u_per, who, size=320)
+        render_pair(u_all, anchor, window_h, u_per, mask_email_username(who), size=320)
     with right:
         st.markdown("**Split by service (selected period)**")
         split = u_per.groupby("service")[["tokens", "credits"]].sum().sort_values("tokens", ascending=False)
@@ -205,6 +206,7 @@ with tab_board:
              .agg(tokens=("tokens", "sum"), credits=("credits", "sum"),
                   services=("service", "nunique"), last_seen=("hr", "max"))
              .sort_values("tokens", ascending=False).reset_index())
+    board["user_name"] = board["user_name"].map(mask_email_username)
     board["share"] = board["tokens"] / max(board["tokens"].sum(), 1)
     st.dataframe(board, width="stretch", hide_index=True,
                  column_config={
