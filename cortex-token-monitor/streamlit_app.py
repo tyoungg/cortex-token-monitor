@@ -1,6 +1,8 @@
 """Cortex AI token monitor: speedometer (tokens/hour) and odometer (running total)."""
+import hashlib
 import math
 import os
+import re
 from datetime import timedelta
 
 import pandas as pd
@@ -35,6 +37,18 @@ def load_hourly() -> pd.DataFrame:
     df["tokens"] = df["tokens"].astype(float)
     df["credits"] = df["credits"].astype(float)
     return df
+
+
+def mask_email_usernames(df: pd.DataFrame) -> pd.DataFrame:
+    """Replace email-style usernames with stable, non-identifying display labels."""
+    masked = df.copy()
+    email_users = sorted(
+        name for name in masked["user_name"].dropna().unique()
+        if re.fullmatch(r"[^\s@]+@[^\s@]+", str(name))
+    )
+    labels = {name: f"Email user {i}" for i, name in enumerate(email_users, start=1)}
+    masked["user_name"] = masked["user_name"].replace(labels)
+    return masked
 
 
 def clear_cache() -> None:
@@ -122,7 +136,7 @@ with st.sidebar:
     st.button("Refresh data", icon=":material/refresh:", on_click=clear_cache)
 
 with st.spinner("Loading Cortex usage..."):
-    data = load_hourly()
+    data = mask_email_usernames(load_hourly())
 
 if data.empty:
     st.info("No Cortex AI usage found yet.")
