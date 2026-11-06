@@ -39,16 +39,20 @@ def load_hourly() -> pd.DataFrame:
 
 
 def mask_email_username(name: str) -> str:
-    """Mask the middle of an email's local part while preserving its domain."""
+    """Mask the middle of each email component while retaining its structure."""
     if not isinstance(name, str) or not re.fullmatch(r"[^\s@]+@[^\s@]+", name):
         return name
 
+    def mask_component(component: str) -> str:
+        if len(component) == 1:
+            return "*"
+        if len(component) <= 4:
+            return f"{component[0]}{'*' * (len(component) - 2)}{component[-1]}"
+        return f"{component[:2]}{'*' * max(3, len(component) - 4)}{component[-2:]}"
+
     local, domain = name.rsplit("@", 1)
-    if len(local) > 4:
-        masked_local = f"{local[:2]}{'*' * max(3, len(local) - 4)}{local[-2:]}"
-    else:
-        masked_local = f"{local[0]}***"
-    return f"{masked_local}@{domain}"
+    masked_domain = ".".join(mask_component(part) for part in domain.split("."))
+    return f"{mask_component(local)}@{masked_domain}"
 
 
 def clear_cache() -> None:
@@ -142,7 +146,6 @@ if data.empty:
     st.info("No Cortex AI usage found yet.")
     st.stop()
 
-data["user_display"] = data["user_name"].map(mask_email_username)
 services = sorted(data["service"].unique())
 with st.sidebar:
     sel_services = st.multiselect("Services", services, default=services)
