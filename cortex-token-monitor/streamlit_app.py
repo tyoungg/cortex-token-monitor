@@ -10,7 +10,7 @@ import streamlit as st
 st.set_page_config(page_title="Cortex Token Monitor", page_icon=":material/speed:", layout="wide")
 st.title(":material/speed: Cortex AI token monitor")
 st.caption(
-    "Source: TOKEN.USAGE.CORTEX_TOKEN_USAGE_V (ACCOUNT_USAGE). "
+    "Source: TOKEN.USAGE.CORTEX_TOKEN_USAGE_V (fallback: SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY). "
     "Data lags ~45 min to 3 h, so the speedometer reflects the latest available rate."
 )
 
@@ -27,10 +27,32 @@ WHERE usage_time IS NOT NULL
 GROUP BY 1, 2, 3
 """
 
+NATIVE_ACCOUNT_USAGE_SQL = """
+SELECT DATE_TRUNC('hour', start_time) AS hr,
+       COALESCE(model_name, function_name) AS service,
+       '(unattributed)' AS user_name,
+       SUM(COALESCE(tokens, 0)) AS tokens,
+       SUM(COALESCE(token_credits, 0)) AS credits
+FROM SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY
+WHERE start_time IS NOT NULL
+GROUP BY 1, 2, 3
+"""
+
 
 @st.cache_data(ttl=600, show_spinner=False)
 def load_hourly() -> pd.DataFrame:
-    df = conn.query(HOURLY_SQL, ttl=0)
+    try:
+        df = conn.query(HOURLY_SQL, ttl=0)
+    except Exception as err:
+        try:
+            df = conn.query(NATIVE_ACCOUNT_USAGE_SQL, ttl=0)
+        except Exception as fallback_err:
+            st.error(
+                f"Failed to query usage data (barfing): {err}. Fallback to "
+                f"SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY also failed: {fallback_err}"
+            )
+            return pd.DataFrame(columns=["hr", "service", "user_name", "tokens", "credits"])
+
     df.columns = [c.lower() for c in df.columns]
     df["hr"] = pd.to_datetime(df["hr"], utc=True)
     df["tokens"] = df["tokens"].astype(float)
@@ -55,7 +77,8 @@ def mask_email_username(name: str) -> str:
     return f"{mask_component(local)}@{masked_domain}"
 
 
-def clear_cache() -> None:
+def refresh_data() -> None:
+    """Clear cache to attempt to fetch fresh data."""
     load_hourly.clear()
 
 
@@ -137,10 +160,16 @@ with st.sidebar:
     window_h = st.segmented_control("Speedometer window", [1, 6, 24], default=6,
                                     format_func=lambda h: f"{h}h") or 6
     period = st.radio("Odometer period", ["Today", "Month to date", "Last 30 days", "All time"], index=1)
-    st.button("Refresh data", icon=":material/refresh:", on_click=clear_cache)
+    st.button("Refresh data", icon=":material/refresh:", on_click=refresh_data)
 
 with st.spinner("Loading Cortex usage..."):
-    data = load_hourly()
+    new_data = load_hourly()
+    if not new_data.empty or "cached_cortex_data" not in st.session_state:
+        st.session_state["cached_cortex_data"] = new_data
+    elif new_data.empty and "cached_cortex_data" in st.session_state and not st.session_state["cached_cortex_data"].empty:
+        st.warning("Could not refresh data from Snowflake; displaying previously cached usage data.")
+
+data = st.session_state.get("cached_cortex_data", pd.DataFrame())
 
 if data.empty:
     st.info("No Cortex AI usage found yet.")
