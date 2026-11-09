@@ -43,14 +43,10 @@ GROUP BY 1, 2, 3
 def load_hourly() -> pd.DataFrame:
     try:
         df = conn.query(HOURLY_SQL, ttl=0)
-    except Exception as err:
+    except Exception:
         try:
             df = conn.query(NATIVE_ACCOUNT_USAGE_SQL, ttl=0)
-        except Exception as fallback_err:
-            st.error(
-                f"Failed to query usage data (barfing): {err}. Fallback to "
-                f"SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY also failed: {fallback_err}"
-            )
+        except Exception:
             return pd.DataFrame(columns=["hr", "service", "user_name", "tokens", "credits"])
 
     df.columns = [c.lower() for c in df.columns]
