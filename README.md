@@ -4,7 +4,7 @@ A Streamlit dashboard for monitoring Snowflake Cortex AI token usage.
 
 ## Data Sources
 
-The dashboard queries token and credit usage from `TOKEN.USAGE.CORTEX_TOKEN_USAGE_V`. If the `TOKEN` application view is unavailable (for example, if app access is suspended or inactive), the app automatically falls back to querying Snowflake's standard `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` view.
+The dashboard queries token and credit usage from `TOKEN.USAGE.CORTEX_TOKEN_USAGE_V`. If the `TOKEN` application view is unavailable (for example, if app access is suspended or inactive), the app automatically falls back to querying Snowflake's standard `SNOWFLAKE.ACCOUNT_USAGE.CORTEX_FUNCTIONS_USAGE_HISTORY` view. If neither view is accessible (for example, if the account or organization is inactive), the app applies a third-level fallback that idles quietly with an informative notice and does not attempt any further actions or raise errors.
 
 ## Privacy
 
